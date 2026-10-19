@@ -139,14 +139,14 @@ class HouseModel extends ChangeNotifier {
     // A new file name per revision defeats ARCore caching.
     final file = File('${_dir.path}/house_${++_revision}.glb');
     final snapshot = Map.of(paints);
-    final textures = <String, Uint8List>{};
+    final images = <String, Uint8List>{};
     for (final paint in snapshot.values) {
-      if (paint.texture case final id?) {
-        textures[id] = await _loadAsset(paint.textureAsset!);
+      for (final key in [?paint.textureAsset, ?paint.normalAsset]) {
+        images[key] = await _loadAsset(key);
       }
     }
     await file.writeAsBytes(
-      _recolorer.build(snapshot, textures: textures),
+      _recolorer.build(snapshot, images: images),
       flush: true,
     );
     if (exported != null) {

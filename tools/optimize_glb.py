@@ -13,8 +13,16 @@ This script:
   * gives everything under the paintable parts (node names starting with
     CS-S / CS-P) a single material each, named "paint-structure" /
     "paint-panels", which the app recolors by name;
+  * gives the roof, the eaves lining and the drain pipes (FIXED) plain
+    materials in place of the CAD's placeholder colors;
+  * drops the CAD's only glass (a stray sliver on the back wall) and glazes
+    the window and the door with real panes (PANES);
+  * gives the panels a normal map (PANEL_NORMALS) so their embossing catches
+    the light even in a plain color, and darkens the ledges inside their
+    grooves and joints (GROOVE_SHADE, as vertex colors) for the occlusion the
+    renderers don't compute;
   * replaces KHR_materials_transmission with plain alpha blending;
-  * drops duplicate images;
+  * drops duplicate images, and the source's images when nothing uses them;
   * drops texture coordinates of untextured materials, and gives the panels
     their own (box-mapped in world space, PANEL_TILE per texture repeat), for
     the brochure finish textures the app applies at runtime;
@@ -31,6 +39,7 @@ import json
 import math
 import struct
 import sys
+from pathlib import Path
 
 PARTS = {"CS-S": "paint-structure", "CS-P": "paint-panels"}
 # Screws, bolts, nuts and washers: ~1% of the house's size, so invisible in
@@ -39,11 +48,37 @@ HARDWARE_PREFIXES = ("VINO", "PINO", "IZNC", "DZNC", "VZNC", "ROPL", "DINO")
 # Mirrors the default paints in lib/house_model.dart so the first frame is
 # already right before the app applies the current configuration.
 PART_DEFAULTS = {"paint-structure": 0x8B4513, "paint-panels": 0xF5F5F5}
+# Parts that aren't configurable, by node-name prefix, with their look. Same
+# materials as the website's model (tools/viewer/prep-model.mjs).
+FIXED = {"GLAMET": "roof", "UT06": "lining", "VALSIR": "drain"}
+FIXED_MATERIALS = {
+    # name: linear RGBA, metallic, roughness
+    "roof": ([0.35, 0.36, 0.37, 1], 0.3, 0.5),
+    "lining": ([0.82, 0.82, 0.80, 1], 0.0, 0.7),
+    "drain": ([0.60, 0.60, 0.62, 1], 0.6, 0.4),
+    # Tinted, reflective; see PANES.
+    "glass": ([0.10, 0.14, 0.16, 0.55], 0.0, 0.05),
+}
+# Material of the CAD's only glass, a stray sliver on the back wall.
+STRAY_GLASS = "ClearYellow"
+# Panes in the window and in the top half of the door (min and max corner,
+# world space, meters), measured for the website's model. Each runs 1 cm
+# into its frame so no gap shows at the edges.
+PANES = [
+    ((-0.753, 0.478, 0.868), (-0.602, 1.967, 0.874)),
+    ((-0.014, 1.035, 0.876), (0.693, 1.905, 0.882)),
+]
+# Normal map of the default panel embossing (goffrato), made from the
+# brochure by tools/make_textures.py. The app swaps it per finish.
+PANEL_NORMALS = Path(__file__).resolve().parent.parent / "assets/textures/doga-goffrato-ral9010_n.jpg"
 # Real size of one repeat of the panel textures (assets/textures/*.jpg, which
 # are pre-mirrored 2 x 2 tiles of a half-board face), in meters.
 PANEL_TILE = (1.2, 0.5)
 # Height of one row of the panels' joints and grooves, in meters.
 PANEL_ROW = 0.25
+# Brightness of the panels' horizontal faces: the ledges inside grooves and
+# joints, which the sky would otherwise light like the open wall.
+GROOVE_SHADE = 0.3
 
 GLB_MAGIC, JSON_CHUNK, BIN_CHUNK = 0x46546C67, 0x4E4F534A, 0x004E4942
 INT8, INT16, FLOAT, UINT8, UINT16, UINT32 = 5120, 5122, 5126, 5121, 5123, 5125
@@ -83,7 +118,8 @@ def read_accessor(gltf, binary, index):
 
 
 def panel_uvs(positions, normals):
-    """Box mapping in world space for one panel triangle.
+    """Box mapping in world space for one panel triangle, and whether the
+    triangle faces up or down (a ledge).
 
     Picks the plane by the dominant axis of the face normal and shifts every
     row of boards by a stable pseudo-random amount, so the grain doesn't line
@@ -106,7 +142,7 @@ def panel_uvs(positions, normals):
     return [
         (p[axes[0]] / PANEL_TILE[0] + shift * 2, p[axes[1]] / PANEL_TILE[1])
         for p in positions
-    ]
+    ], axes == (0, 2)
 
 
 def mat_mul(a, b):
@@ -158,7 +194,7 @@ def optimize(gltf, binary, quantize=True):
         name = node.get("name", "")
         if name.startswith(HARDWARE_PREFIXES):
             return
-        for prefix, material in PARTS.items():
+        for prefix, material in (PARTS | FIXED).items():
             if name.startswith(prefix):
                 part = material
         world = mat_mul(parent_matrix, node.get("matrix", identity))
@@ -172,12 +208,14 @@ def optimize(gltf, binary, quantize=True):
         for prim in gltf["meshes"][mesh_index]["primitives"]:
             if prim.get("mode", 4) != 4 or "indices" not in prim:
                 raise SystemExit("only indexed triangle lists are supported")
+            if gltf["materials"][prim.get("material", 0)].get("name") == STRAY_GLASS:
+                continue
             key_material = part or prim.get("material")
             panels = key_material == "paint-panels"
             attrs = tuple(sorted(
                 a for a in prim["attributes"]
                 if not a.startswith("TEXCOORD") or textured(key_material)
-            ) + (["TEXCOORD_0"] if panels else []))
+            ) + (["COLOR_0", "TEXCOORD_0"] if panels else []))
             key = (key_material, attrs)
             group = groups.setdefault(key, {a: [] for a in attrs} | {"indices": []})
             values = {"POSITION": [
@@ -195,7 +233,7 @@ def optimize(gltf, binary, quantize=True):
                     length = math.sqrt(sum(v * v for v in n)) or 1
                     values["NORMAL"].append(tuple(v / length for v in n))
             for attr in attrs:
-                if attr not in values and not (panels and attr == "TEXCOORD_0"):
+                if attr not in values and not (panels and attr in ("COLOR_0", "TEXCOORD_0")):
                     if attr == "TANGENT":
                         raise SystemExit("TANGENT attributes not supported")
                     values[attr] = read_accessor(gltf, binary, prim["attributes"][attr])
@@ -212,10 +250,13 @@ def optimize(gltf, binary, quantize=True):
                     for i in tri:
                         for attr, v in values.items():
                             group[attr].append(v[i])
-                    group["TEXCOORD_0"] += panel_uvs(
+                    uvs, ledge = panel_uvs(
                         [values["POSITION"][i] for i in tri],
                         [values["NORMAL"][i] for i in tri],
                     )
+                    group["TEXCOORD_0"] += uvs
+                    shade = round(255 * (GROOVE_SHADE if ledge else 1))
+                    group["COLOR_0"] += [(shade, shade, shade, 255)] * 3
                     group["indices"] += (first, first + 1, first + 2)
             else:
                 first = len(group["POSITION"])
@@ -232,13 +273,30 @@ def optimize(gltf, binary, quantize=True):
     scene = gltf["scenes"][gltf.get("scene", 0)]
     for root in scene["nodes"]:
         walk(root, identity, None)
+    glass = groups.setdefault(("glass", ("NORMAL", "POSITION")),
+                              {"NORMAL": [], "POSITION": [], "indices": []})
+    for lo, hi in PANES:
+        add_box(glass, lo, hi)
 
     # --- materials -------------------------------------------------------
     materials, remap = [], {}
     for key, _ in groups:
         if key in remap:
             continue
-        if isinstance(key, str):
+        if key in FIXED_MATERIALS:
+            color, metallic, roughness = FIXED_MATERIALS[key]
+            mat = {
+                "name": key,
+                "doubleSided": True,
+                "pbrMetallicRoughness": {
+                    "baseColorFactor": color,
+                    "metallicFactor": metallic,
+                    "roughnessFactor": roughness,
+                },
+            }
+            if color[3] < 1:
+                mat["alphaMode"] = "BLEND"
+        elif isinstance(key, str):
             rgb = PART_DEFAULTS[key]
             mat = {
                 "name": key,
@@ -283,7 +341,11 @@ def optimize(gltf, binary, quantize=True):
         return len(views) - 1
 
     images, image_remap, seen = [], {}, {}
-    for i, image in enumerate(gltf.get("images", [])):
+    # Only kept source materials can use the source's textures.
+    source_textures = '"index"' in json.dumps(
+        [m for m in materials if m.get("name") not in PART_DEFAULTS | FIXED_MATERIALS]
+    )
+    for i, image in enumerate(gltf.get("images", []) if source_textures else []):
         view = gltf["bufferViews"][image["bufferView"]]
         start = view.get("byteOffset", 0)
         data = binary[start : start + view["byteLength"]]
@@ -293,8 +355,14 @@ def optimize(gltf, binary, quantize=True):
         image_remap[i] = seen[data]
     textures = [
         {"sampler": t.get("sampler", 0), "source": image_remap[t["source"]]}
-        for t in gltf.get("textures", [])
+        for t in (gltf.get("textures", []) if source_textures else [])
     ]
+    samplers = gltf.get("samplers", [{}]) if source_textures else []
+    # Panel normal map: REPEAT, as the tile is pre-mirrored.
+    images.append({"mimeType": "image/jpeg", "bufferView": add_view(PANEL_NORMALS.read_bytes())})
+    samplers = samplers + [{"magFilter": 9729, "minFilter": 9987, "wrapS": 10497, "wrapT": 10497}]
+    textures.append({"sampler": len(samplers) - 1, "source": len(images) - 1})
+    materials[remap["paint-panels"]]["normalTexture"] = {"index": len(textures) - 1}
 
     # --- geometry ----------------------------------------------------------
     node = {"name": "GardenHouse", "mesh": 0}
@@ -322,6 +390,11 @@ def optimize(gltf, binary, quantize=True):
                 # int16 xyz padded to 8 bytes: attributes must be 4-aligned.
                 data = b"".join(struct.pack("<4h", *v, 0) for v in values)
                 acc |= {"bufferView": add_view(data, 34962, stride=8), "componentType": INT16}
+            elif attr == "COLOR_0":
+                # Normalized uint8 RGBA (0-255 in the group).
+                data = b"".join(struct.pack("<4B", *v) for v in values)
+                acc |= {"bufferView": add_view(data, 34962, stride=4),
+                        "componentType": UINT8, "normalized": True}
             elif quantize and attr == "NORMAL":
                 data = b"".join(struct.pack("<4b", *v, 0) for v in values)
                 acc |= {"bufferView": add_view(data, 34962, stride=4),
@@ -364,13 +437,31 @@ def optimize(gltf, binary, quantize=True):
         "buffers": [{"byteLength": len(out)}],
     }
     if images:
-        result |= {"images": images, "textures": textures, "samplers": gltf.get("samplers", [{}])}
+        result |= {"images": images, "textures": textures, "samplers": samplers}
     if used_ext:
         result["extensionsUsed"] = used_ext
     if quantize:
         # Readers that can't decode int16 positions must not guess.
         result["extensionsRequired"] = ["KHR_mesh_quantization"]
     return result, bytes(out)
+
+
+def add_box(group, lo, hi):
+    """Appends a box (outward normals, counter-clockwise faces) to [group]."""
+    (x0, y0, z0), (x1, y1, z1) = lo, hi
+    faces = [
+        ((1, 0, 0), [(x1, y0, z1), (x1, y0, z0), (x1, y1, z0), (x1, y1, z1)]),
+        ((-1, 0, 0), [(x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (x0, y1, z0)]),
+        ((0, 1, 0), [(x0, y1, z1), (x1, y1, z1), (x1, y1, z0), (x0, y1, z0)]),
+        ((0, -1, 0), [(x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1)]),
+        ((0, 0, 1), [(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]),
+        ((0, 0, -1), [(x1, y0, z0), (x0, y0, z0), (x0, y1, z0), (x1, y1, z0)]),
+    ]
+    for normal, quad in faces:
+        first = len(group["POSITION"])
+        group["POSITION"] += quad
+        group["NORMAL"] += [normal] * 4
+        group["indices"] += (first, first + 1, first + 2, first, first + 2, first + 3)
 
 
 def quantize_group(group, attrs, center, step):

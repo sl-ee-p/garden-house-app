@@ -72,6 +72,7 @@ flutter:
   assets:
     - assets/models/garden_house.glb
     - assets/env/garden.jpg
+    - assets/env/garden.hdr
     - assets/textures/
     - assets/finiture/
 

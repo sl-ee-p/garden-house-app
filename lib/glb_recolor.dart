@@ -37,6 +37,10 @@ class Paint {
   String? get textureAsset =>
       texture == null ? null : 'assets/textures/$texture.jpg';
 
+  /// Asset key of the [texture]'s normal map (tools/make_textures.py).
+  String? get normalAsset =>
+      texture == null ? null : 'assets/textures/${texture}_n.jpg';
+
   factory Paint.fromJson(Map<String, dynamic> json) => Paint(
     json['color'] as int,
     metallic: (json['metallic'] as num).toDouble(),
@@ -151,31 +155,38 @@ class GlbRecolorer {
   Map<String, dynamic>? _json;
   Uint8List? _bin;
 
-  /// Returns a new GLB with [paints] applied. [textures] maps texture ids to
-  /// JPEG bytes; a textured paint whose image is missing gets its flat color.
+  /// Returns a new GLB with [paints] applied. [images] maps asset keys
+  /// ([Paint.textureAsset], [Paint.normalAsset]) to JPEG bytes; a textured
+  /// paint whose image is missing gets its flat color, and keeps the model's
+  /// normal map if its own is missing.
   Uint8List build(
     Map<HousePart, Paint> paints, {
-    Map<String, Uint8List> textures = const {},
+    Map<String, Uint8List> images = const {},
   }) {
     // Deep copy so the recolorer can be reused for many builds.
     final json = jsonDecode(jsonEncode(_json)) as Map<String, dynamic>;
     final materials = (json['materials'] as List).cast<Map<String, dynamic>>();
     final bin = BytesBuilder(copy: false)..add(_bin ?? Uint8List(0));
     final textureIndex = <String, int>{};
+    int? texture(String? key) {
+      final image = images[key];
+      if (image == null) return null;
+      return textureIndex[key!] ??= _addTexture(json, bin, image);
+    }
+
     for (final entry in paints.entries) {
       final paint = entry.value;
-      final image = textures[paint.texture];
-      final index = image == null
-          ? null
-          : textureIndex[paint.texture!] ??= _addTexture(json, bin, image);
+      final color = texture(paint.textureAsset);
+      final normals = texture(paint.normalAsset);
       for (final m in materials) {
         if (m['name'] != entry.key.materialName) continue;
         m['pbrMetallicRoughness'] = {
-          'baseColorFactor': index == null ? paint.linearRgba : [1.0, 1.0, 1.0, 1.0],
-          'baseColorTexture': ?(index == null ? null : {'index': index}),
+          'baseColorFactor': color == null ? paint.linearRgba : [1.0, 1.0, 1.0, 1.0],
+          'baseColorTexture': ?(color == null ? null : {'index': color}),
           'metallicFactor': paint.metallic,
           'roughnessFactor': paint.roughness,
         };
+        if (normals != null) m['normalTexture'] = {'index': normals};
       }
     }
     if (textureIndex.isEmpty) return _pack(json, _bin);

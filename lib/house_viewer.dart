@@ -67,6 +67,9 @@ class HouseViewer extends StatefulWidget {
   /// Background of the interactive viewer, projected as ground and sky.
   static const skybox = 'assets/env/garden.jpg';
 
+  /// Lighting: the HDR of the same place as [skybox].
+  static const environment = 'assets/env/garden.hdr';
+
   @override
   State<HouseViewer> createState() => _HouseViewerState();
 }
@@ -75,32 +78,42 @@ class _HouseViewerState extends State<HouseViewer> {
   static const _channel = 'HouseViewer';
 
   // Runs after the <model-viewer> element; `paints` maps material name to
-  // {c: linear RGBA, m: metallic, r: roughness, t: texture URL or null}.
+  // {c: linear RGBA, m: metallic, r: roughness, t: texture URL or null,
+  // n: its normal map URL}.
   static const _js = '''
 (() => {
   const viewer = document.querySelector('model-viewer');
   const send = (msg) => $_channel.postMessage(JSON.stringify(msg));
   const initialOrbit = viewer.cameraOrbit;
+  // Filmic: keeps highlights and shadows out of the flat, plasticky look of
+  // the default curve.
+  viewer.toneMapping = 'aces';
   let paints = {};
   const textures = {};  // url -> Promise<Texture>
   const shown = {};  // material name -> texture URL set on it
-  // Loads a texture and sets it once ready; a load superseded by another
-  // pick meanwhile is dropped.
-  const loadTexture = async (material, url) => {
+  const modelNormals = {};  // material name -> the model's own normal map
+  const load = async (url) => {
     textures[url] ??= viewer.createTexture(url);
-    let texture;
     try {
-      texture = await textures[url];
+      const texture = await textures[url];
+      // Pre-mirrored tiles (tools/make_textures.py): plain repeat is seamless.
+      texture.sampler.setWrapS(10497);
+      texture.sampler.setWrapT(10497);
+      return texture;
     } catch (e) {
       delete textures[url];
-      return;
+      return null;
     }
+  };
+  // Loads a texture and its normal map and sets them once both are ready; a
+  // load superseded by another pick meanwhile is dropped.
+  const loadTexture = async (material, url, normalUrl) => {
+    const [texture, normals] = await Promise.all([load(url), normalUrl && load(normalUrl)]);
+    if (!texture) return;
     if (paints[material.name]?.t !== url || shown[material.name] === url) return;
-    // Pre-mirrored tiles (tools/make_textures.py): plain repeat is seamless.
-    texture.sampler.setWrapS(10497);
-    texture.sampler.setWrapT(10497);
     material.pbrMetallicRoughness.baseColorTexture.setTexture(texture);
     material.pbrMetallicRoughness.setBaseColorFactor([1, 1, 1, 1]);
+    if (normals) material.normalTexture.setTexture(normals);
     shown[material.name] = url;
   };
   const apply = () => {
@@ -109,8 +122,12 @@ class _HouseViewerState extends State<HouseViewer> {
       const p = paints[material.name];
       if (!p) continue;
       const pbr = material.pbrMetallicRoughness;
+      if (!(material.name in modelNormals)) {
+        modelNormals[material.name] = material.normalTexture?.texture ?? null;
+      }
       if (!p.t && shown[material.name]) {
         pbr.baseColorTexture.setTexture(null);
+        material.normalTexture.setTexture(modelNormals[material.name]);
         delete shown[material.name];
       }
       // While another texture is shown it stays until the new one is ready;
@@ -118,7 +135,7 @@ class _HouseViewerState extends State<HouseViewer> {
       if (!shown[material.name]) pbr.setBaseColorFactor(p.c);
       pbr.setMetallicFactor(p.m);
       pbr.setRoughnessFactor(p.r);
-      if (p.t && shown[material.name] !== p.t) loadTexture(material, p.t);
+      if (p.t && shown[material.name] !== p.t) loadTexture(material, p.t, p.n);
     }
   };
   window.setPaints = (p) => { paints = p; apply(); };
@@ -256,7 +273,7 @@ model-viewer { --poster-color: transparent; }
   final _progress = ValueNotifier<double>(0);
   Completer<Uint8List?>? _pendingSnapshot;
 
-  /// Serves the skybox and the panel textures.
+  /// Serves the skybox, the lighting and the panel textures.
   AssetServer? _server;
 
   /// Built once (ModelViewer ignores widget updates anyway), after the
@@ -286,8 +303,10 @@ model-viewer { --poster-color: transparent; }
       shadowIntensity: 1,
       shadowSoftness: 1,
       skyboxImage: interactive ? server.url(HouseViewer.skybox) : null,
-      environmentImage: interactive ? null : 'neutral',
-      exposure: interactive ? 1.3 : null,
+      // Daylight from the park's HDR, for the photo overlay too: an outdoor
+      // scene, unlike model-viewer's neutral studio light.
+      environmentImage: server.url(HouseViewer.environment),
+      exposure: 1,
       interactionPrompt: InteractionPrompt.none,
       cameraOrbit: widget.initialOrbit,
       minCameraOrbit: 'auto 20deg auto',
@@ -351,6 +370,10 @@ model-viewer { --poster-color: transparent; }
           'm': paint.metallic,
           'r': paint.roughness,
           't': switch (paint.textureAsset) {
+            final key? => _server?.url(key),
+            null => null,
+          },
+          'n': switch (paint.normalAsset) {
             final key? => _server?.url(key),
             null => null,
           },

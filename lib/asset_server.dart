@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 /// Serves bundled assets over loopback HTTP, for the WebView.
 ///
 /// model_viewer_plus's own proxy only serves the model, so other files the
-/// page needs (the skybox, the panel textures) come from here.
+/// page needs (skybox, lighting, panel textures) come from here.
 class AssetServer {
   AssetServer._(this._server) {
     _server.listen(_handle);
