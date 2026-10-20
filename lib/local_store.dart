@@ -18,7 +18,15 @@ class LocalStore {
 
   static Future<LocalStore> _open() async {
     final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/settings.json');
+    return open(File('${dir.path}/settings.json'));
+  }
+
+  /// Opens the store kept in [file]; [instance] uses the app's settings file.
+  ///
+  /// An unreadable or corrupt file is moved aside to `<file>.bad` and the
+  /// store starts empty, so the next write can't destroy what's left of it.
+  @visibleForTesting
+  static Future<LocalStore> open(File file) async {
     var data = <String, dynamic>{};
     try {
       if (await file.exists()) {
@@ -26,6 +34,11 @@ class LocalStore {
       }
     } on Object catch (e) {
       debugPrint('Ignoring unreadable ${file.path}: $e');
+      try {
+        await file.rename('${file.path}.bad');
+      } on FileSystemException catch (e) {
+        debugPrint('Could not move ${file.path} aside: $e');
+      }
     }
     return LocalStore._(file, data);
   }
@@ -34,7 +47,12 @@ class LocalStore {
   final Map<String, dynamic> _data;
   Future<void> _writing = Future.value();
 
-  String? getString(String key) => _data[key] as String?;
+  /// The string stored under [key], or null if there is none (or the value
+  /// isn't a string).
+  String? getString(String key) => switch (_data[key]) {
+    final String value => value,
+    _ => null,
+  };
 
   /// Updates the value and writes the file; writes are serialized, and each
   /// goes to a temp file first so a crash can't leave half a file behind.

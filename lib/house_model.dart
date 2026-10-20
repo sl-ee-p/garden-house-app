@@ -17,12 +17,22 @@ Map<String, dynamic> configToJson(HouseConfig config) => {
     part.name: paint.toJson(),
 };
 
-/// Parts missing from [json] (or unknown names) are skipped.
+/// Parts missing from [json], unknown names and malformed paints are
+/// skipped, so one bad entry doesn't lose the rest of a saved configuration.
 HouseConfig configFromJson(Map<String, dynamic> json) => {
   for (final part in HousePart.values)
     if (json[part.name] case final Map<String, dynamic> paint)
-      part: Paint.fromJson(paint),
+      part: ?_tryPaint(paint),
 };
+
+Paint? _tryPaint(Map<String, dynamic> json) {
+  try {
+    return Paint.fromJson(json);
+  } on TypeError catch (e) {
+    debugPrint('Ignoring saved paint $json: $e');
+    return null;
+  }
+}
 
 /// Holds the current configuration. The 3D preview recolors the bundled model
 /// live; the AR view needs a file, which [exportGlb] bakes on demand.
@@ -79,7 +89,9 @@ class HouseModel extends ChangeNotifier {
     final saved = store.getString(_lastConfigKey);
     if (saved != null) {
       try {
-        model.paints.addAll(configFromJson(jsonDecode(saved)));
+        model.paints.addAll(
+          configFromJson(jsonDecode(saved) as Map<String, dynamic>),
+        );
       } on Object catch (e) {
         debugPrint('Ignoring saved configuration: $e');
       }
@@ -121,12 +133,22 @@ class HouseModel extends ChangeNotifier {
     _saveTimer = Timer(const Duration(milliseconds: 500), _save);
   }
 
-  void _save() =>
-      _store?.setString(_lastConfigKey, jsonEncode(configToJson(paints)));
+  Future<void> _save() async {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    await _store?.setString(_lastConfigKey, jsonEncode(configToJson(paints)));
+  }
+
+  /// Saves now if a change is still waiting for its (debounced) save, e.g.
+  /// when the app goes to the background and may be killed.
+  Future<void> flush() async {
+    if (_saveTimer?.isActive ?? false) await _save();
+  }
 
   @override
   void dispose() {
-    _saveTimer?.cancel();
+    // Not just cancelling the timer: the last change would never be saved.
+    flush();
     super.dispose();
   }
 
@@ -141,7 +163,13 @@ class HouseModel extends ChangeNotifier {
     final images = <String, Uint8List>{};
     for (final paint in snapshot.values) {
       for (final key in [?paint.textureAsset, ?paint.normalAsset]) {
-        images[key] = await _loadAsset(key);
+        try {
+          images[key] = await _loadAsset(key);
+        } on Object catch (e) {
+          // E.g. a finish saved by a version that still had it: the
+          // recolorer falls back to the paint's flat color.
+          debugPrint('Exporting without $key: $e');
+        }
       }
     }
     await file.writeAsBytes(

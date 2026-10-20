@@ -28,25 +28,44 @@ class SavedConfig {
 class SavedConfigs {
   static const _key = 'saved_configs';
 
-  static Future<List<SavedConfig>> load() async {
-    final raw = (await LocalStore.instance).getString(_key);
+  static Future<List<SavedConfig>> load() async =>
+      decode((await LocalStore.instance).getString(_key));
+
+  static Future<void> store(List<SavedConfig> configs) async =>
+      (await LocalStore.instance).setString(_key, encode(configs));
+
+  /// The favorites stored as [raw] by [encode].
+  ///
+  /// Entries that can't be read (or have no paint left) are skipped one by
+  /// one: failing the whole list would show none, and the next save would
+  /// then overwrite them all.
+  @visibleForTesting
+  static List<SavedConfig> decode(String? raw) {
     if (raw == null) return [];
+    final Object? list;
     try {
-      return [
-        for (final e in jsonDecode(raw) as List)
-          SavedConfig.fromJson(e as Map<String, dynamic>),
-      ];
-    } on Object catch (e) {
+      list = jsonDecode(raw);
+    } on FormatException catch (e) {
       debugPrint('Ignoring saved configurations: $e');
       return [];
     }
+    if (list is! List) return [];
+    return [for (final e in list) ?_tryDecode(e)];
   }
 
-  static Future<void> store(List<SavedConfig> configs) async =>
-      (await LocalStore.instance).setString(
-        _key,
-        jsonEncode([for (final c in configs) c.toJson()]),
-      );
+  static SavedConfig? _tryDecode(Object? json) {
+    try {
+      final config = SavedConfig.fromJson(json as Map<String, dynamic>);
+      return config.config.isEmpty ? null : config;
+    } on TypeError catch (e) {
+      debugPrint('Ignoring saved configuration $json: $e');
+      return null;
+    }
+  }
+
+  @visibleForTesting
+  static String encode(List<SavedConfig> configs) =>
+      jsonEncode([for (final c in configs) c.toJson()]);
 }
 
 /// Bottom sheet listing the favorites: tap applies one, swipe deletes it,
