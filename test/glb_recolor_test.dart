@@ -12,6 +12,39 @@ Map<String, dynamic> jsonOf(Uint8List glb) {
       as Map<String, dynamic>;
 }
 
+/// A minimal GLB around [json], with a BIN chunk if [bin] is given.
+Uint8List glbOf(Map<String, dynamic> json, [List<int>? bin]) {
+  var j = utf8.encode(jsonEncode(json));
+  j = Uint8List.fromList([...j, ...List.filled((4 - j.length % 4) % 4, 0x20)]);
+  final b = bin == null
+      ? null
+      : [...bin, ...List.filled((4 - bin.length % 4) % 4, 0)];
+  final total = 12 + 8 + j.length + (b == null ? 0 : 8 + b.length);
+  final out = Uint8List(total);
+  ByteData.sublistView(out)
+    ..setUint32(0, 0x46546C67, Endian.little)
+    ..setUint32(4, 2, Endian.little)
+    ..setUint32(8, total, Endian.little)
+    ..setUint32(12, j.length, Endian.little)
+    ..setUint32(16, 0x4E4F534A, Endian.little);
+  out.setRange(20, 20 + j.length, j);
+  if (b != null) {
+    final at = 20 + j.length;
+    ByteData.sublistView(out)
+      ..setUint32(at, b.length, Endian.little)
+      ..setUint32(at + 4, 0x004E4942, Endian.little);
+    out.setRange(at + 8, at + 8 + b.length, b);
+  }
+  return out;
+}
+
+const partMaterials = {
+  'materials': [
+    {'name': 'paint-structure'},
+    {'name': 'paint-panels'},
+  ],
+};
+
 void main() {
   final src = File('assets/models/garden_house.glb').readAsBytesSync();
 
@@ -176,5 +209,97 @@ void main() {
     expect(const Paint(0xFFFFFF).linearRgba, [1.0, 1.0, 1.0, 1.0]);
     expect(const Paint(0x000000).linearRgba, [0.0, 0.0, 0.0, 1.0]);
     expect(const Paint(0x808080).linearRgba[0], closeTo(0.2158, 1e-4));
+  });
+
+  group('rejects malformed input with a FormatException', () {
+    final bad = <String, Uint8List>{
+      'empty': Uint8List(0),
+      'not a GLB': Uint8List.fromList(utf8.encode('{"asset": {}}  ')),
+      'truncated': Uint8List.sublistView(src, 0, src.length - 100),
+      'no materials': glbOf({'asset': {}}),
+      'a part material missing': glbOf({
+        'materials': [
+          {'name': 'paint-structure'},
+        ],
+      }),
+      // {"x":1} and [1,2,3] are both 7 bytes long.
+      'JSON chunk is not an object': glbOf({'x': 1})
+        ..setRange(20, 27, utf8.encode('[1,2,3]')),
+    };
+    for (final MapEntry(key: name, value: glb) in bad.entries) {
+      test(name, () {
+        expect(() => GlbRecolorer(glb), throwsFormatException);
+      });
+    }
+  });
+
+  test('ignores bytes after the length in the header', () {
+    final padded = Uint8List.fromList([...src, 1, 2, 3, 4]);
+    expect(GlbRecolorer(padded).build({}), GlbRecolorer(src).build({}));
+  });
+
+  test('embeds textures in a GLB that has no BIN chunk', () {
+    const paint = Paint(0x00FF00, texture: 'noce');
+    final image = Uint8List.fromList(List.generate(13, (i) => i + 1));
+    final out = GlbRecolorer(glbOf(partMaterials))
+        .build({HousePart.panels: paint}, images: {paint.textureAsset!: image});
+
+    final j = jsonOf(out);
+    expect(j['buffers'], [
+      {'byteLength': image.length},
+    ]);
+    expect(j['bufferViews'][0], {
+      'buffer': 0,
+      'byteOffset': 0,
+      'byteLength': image.length,
+    });
+    final d = ByteData.sublistView(out);
+    final jsonLen = d.getUint32(12, Endian.little);
+    final binStart = 20 + jsonLen + 8;
+    expect(d.getUint32(binStart - 4, Endian.little), 0x004E4942);
+    expect(out.sublist(binStart, binStart + image.length), image);
+    expect(d.getUint32(8, Endian.little), out.length);
+    // The result is itself a valid GLB.
+    expect(GlbRecolorer(out).build({}).length, out.length);
+  });
+
+  test('a GLB without a BIN chunk stays without one when untextured', () {
+    final out = GlbRecolorer(glbOf(partMaterials))
+        .build({HousePart.structure: const Paint(0xFF0000)});
+    final jsonLen = ByteData.sublistView(out).getUint32(12, Endian.little);
+    expect(out.length, 20 + jsonLen);
+    expect(jsonOf(out).containsKey('buffers'), isFalse);
+  });
+
+  group('Paint.fromJson', () {
+    test('round-trips toJson', () {
+      const paints = [
+        Paint(0x123456),
+        Paint(0xABCDEF, metallic: 0.85, roughness: 0.35),
+        Paint(0xE9E4DB, roughness: 0.5, texture: 'doga-goffrato-ral9010'),
+      ];
+      for (final p in paints) {
+        expect(Paint.fromJson(jsonDecode(jsonEncode(p.toJson()))), p);
+      }
+    });
+
+    test('defaults a missing metallic or roughness', () {
+      expect(Paint.fromJson({'color': 0x010203}), const Paint(0x010203));
+      expect(
+        Paint.fromJson({'color': 0x010203, 'roughness': 0.15}).finish,
+        Finish.gloss,
+      );
+    });
+
+    test('accepts numbers decoded as doubles', () {
+      expect(
+        Paint.fromJson({'color': 255.0, 'metallic': 0, 'roughness': 1}),
+        const Paint(0x0000FF, roughness: 1),
+      );
+    });
+
+    test('rejects a missing color', () {
+      expect(() => Paint.fromJson({'metallic': 0}), throwsA(isA<TypeError>()));
+    });
   });
 }

@@ -41,10 +41,13 @@ class Paint {
   String? get normalAsset =>
       texture == null ? null : 'assets/textures/${texture}_n.jpg';
 
+  /// Reads [toJson]'s output. Only `color` is required: a missing metallic or
+  /// roughness falls back to the defaults, so older or hand-edited data still
+  /// loads. Throws a [TypeError] if a value has the wrong type.
   factory Paint.fromJson(Map<String, dynamic> json) => Paint(
-    json['color'] as int,
-    metallic: (json['metallic'] as num).toDouble(),
-    roughness: (json['roughness'] as num).toDouble(),
+    (json['color'] as num).toInt() & 0xFFFFFF,
+    metallic: (json['metallic'] as num?)?.toDouble() ?? 0,
+    roughness: (json['roughness'] as num?)?.toDouble() ?? 0.7,
     // Absent in configurations saved before textures existed.
     texture: json['texture'] as String?,
   );
@@ -120,26 +123,39 @@ enum Finish {
 /// (geometry, textures) is copied untouched, and only grows by the images of
 /// textured paints.
 class GlbRecolorer {
+  /// Throws a [FormatException] if [glb] isn't a well-formed GLB with the
+  /// [HousePart] materials.
   GlbRecolorer(Uint8List glb) {
     final data = ByteData.sublistView(glb);
-    if (data.getUint32(0, Endian.little) != _magic) {
+    if (glb.length < 12 || data.getUint32(0, Endian.little) != _magic) {
       throw const FormatException('Not a GLB file');
     }
+    // The header's length; any trailing bytes aren't part of the GLB.
+    final end = data.getUint32(8, Endian.little);
+    if (end > glb.length) throw const FormatException('Truncated GLB');
     var offset = 12;
-    while (offset < glb.length) {
+    while (offset + 8 <= end) {
       final length = data.getUint32(offset, Endian.little);
       final type = data.getUint32(offset + 4, Endian.little);
+      if (offset + 8 + length > end) {
+        throw const FormatException('GLB chunk runs past the end of the file');
+      }
       final body = Uint8List.sublistView(glb, offset + 8, offset + 8 + length);
       if (type == _jsonChunk) {
-        _json = jsonDecode(utf8.decode(body)) as Map<String, dynamic>;
+        if (jsonDecode(utf8.decode(body)) case final Map<String, dynamic> j) {
+          _json = j;
+        }
       } else if (type == _binChunk) {
         _bin = body;
       }
       offset += 8 + length;
     }
-    if (_json == null) throw const FormatException('GLB has no JSON chunk');
+    final json = _json;
+    if (json == null) throw const FormatException('GLB has no JSON chunk');
     final names = [
-      for (final m in (_json!['materials'] as List)) (m as Map)['name'],
+      if (json['materials'] case final List materials)
+        for (final m in materials)
+          if (m case {'name': final Object name}) name,
     ];
     for (final part in HousePart.values) {
       if (!names.contains(part.materialName)) {
@@ -193,7 +209,12 @@ class GlbRecolorer {
     }
     if (textureIndex.isEmpty) return _pack(json, _bin);
     final out = bin.takeBytes();
-    (json['buffers'] as List)[0]['byteLength'] = out.length;
+    // A GLB without a BIN chunk may have no buffers yet; buffer 0 is the BIN
+    // chunk (glTF 2.0 spec, GLB stored buffer).
+    final buffers = json['buffers'] ??= [];
+    if (buffers is! List) throw const FormatException('Bad "buffers" in GLB');
+    if (buffers.isEmpty) buffers.add(<String, dynamic>{});
+    (buffers[0] as Map)['byteLength'] = out.length;
     return _pack(json, out);
   }
 
