@@ -21,8 +21,7 @@ class ColorChooser extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selected = this.selected;
-    final isPreset =
-        selected == null || swatches.any((s) => s.rgb == selected);
+    final isPreset = selected == null || swatches.any((s) => s.rgb == selected);
     return Wrap(
       spacing: 10,
       runSpacing: 10,

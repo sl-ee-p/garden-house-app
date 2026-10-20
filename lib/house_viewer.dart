@@ -80,7 +80,8 @@ class _HouseViewerState extends State<HouseViewer> {
   // Runs after the <model-viewer> element; `paints` maps material name to
   // {c: linear RGBA, m: metallic, r: roughness, t: texture URL or null,
   // n: its normal map URL}.
-  static const _js = '''
+  static const _js =
+      '''
 (() => {
   const viewer = document.querySelector('model-viewer');
   const send = (msg) => $_channel.postMessage(JSON.stringify(msg));
@@ -405,7 +406,11 @@ model-viewer { --poster-color: transparent; }
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.cottage_outlined, size: 48, color: scheme.primary),
+                      Icon(
+                        Icons.cottage_outlined,
+                        size: 48,
+                        color: scheme.primary,
+                      ),
                       const SizedBox(height: 16),
                       ValueListenableBuilder(
                         valueListenable: _progress,

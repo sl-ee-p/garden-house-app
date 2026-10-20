@@ -47,7 +47,11 @@ void main() {
 
   test('configs round-trip through JSON', () {
     final config = {
-      HousePart.structure: const Paint(0x123456, metallic: 0.85, roughness: 0.35),
+      HousePart.structure: const Paint(
+        0x123456,
+        metallic: 0.85,
+        roughness: 0.35,
+      ),
       HousePart.panels: const Paint(0xABCDEF),
     };
     expect(configFromJson(configToJson(config)), config);
@@ -73,7 +77,9 @@ void main() {
       final a = Paint(c[HousePart.structure]!.color);
       final b = Paint(c[HousePart.panels]!.color);
       double lum(Paint p) =>
-          0.2126 * p.linearRgba[0] + 0.7152 * p.linearRgba[1] + 0.0722 * p.linearRgba[2];
+          0.2126 * p.linearRgba[0] +
+          0.7152 * p.linearRgba[1] +
+          0.0722 * p.linearRgba[2];
       final ratio = (max(lum(a), lum(b)) + 0.05) / (min(lum(a), lum(b)) + 0.05);
       expect(ratio, greaterThanOrEqualTo(1.8));
     }

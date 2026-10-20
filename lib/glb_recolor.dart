@@ -181,7 +181,9 @@ class GlbRecolorer {
       for (final m in materials) {
         if (m['name'] != entry.key.materialName) continue;
         m['pbrMetallicRoughness'] = {
-          'baseColorFactor': color == null ? paint.linearRgba : [1.0, 1.0, 1.0, 1.0],
+          'baseColorFactor': color == null
+              ? paint.linearRgba
+              : [1.0, 1.0, 1.0, 1.0],
           'baseColorTexture': ?(color == null ? null : {'index': color}),
           'metallicFactor': paint.metallic,
           'roughnessFactor': paint.roughness,
@@ -206,11 +208,9 @@ class GlbRecolorer {
       bin.addByte(0);
     }
     List list(String key) => json[key] ??= [];
-    list('bufferViews').add({
-      'buffer': 0,
-      'byteOffset': bin.length,
-      'byteLength': image.length,
-    });
+    list(
+      'bufferViews',
+    ).add({'buffer': 0, 'byteOffset': bin.length, 'byteLength': image.length});
     bin.add(image);
     list('images').add({
       'bufferView': list('bufferViews').length - 1,

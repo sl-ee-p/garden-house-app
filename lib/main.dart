@@ -69,7 +69,8 @@ class _ConfiguratorScreenState extends State<ConfiguratorScreen> {
       if (!mounted) return;
       // The preview would keep rendering under the AR screen.
       _viewer.setActive(false);
-      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+      await Navigator.of(context)
+          .push(MaterialPageRoute(builder: (_) => screen));
       _viewer.setActive(true);
     } finally {
       if (mounted) setState(() => _openingAr = false);
@@ -233,9 +234,21 @@ class _ConfiguratorScreenState extends State<ConfiguratorScreen> {
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              button(Icons.crop_portrait, 'Vista frontale', () => _viewer.animateOrbit(0, 80)),
-              button(Icons.crop_landscape, 'Vista laterale', () => _viewer.animateOrbit(90, 80)),
-              button(Icons.vertical_align_bottom, 'Vista dall\'alto', () => _viewer.animateOrbit(35, 25)),
+              button(
+                Icons.crop_portrait,
+                'Vista frontale',
+                () => _viewer.animateOrbit(0, 80),
+              ),
+              button(
+                Icons.crop_landscape,
+                'Vista laterale',
+                () => _viewer.animateOrbit(90, 80),
+              ),
+              button(
+                Icons.vertical_align_bottom,
+                'Vista dall\'alto',
+                () => _viewer.animateOrbit(35, 25),
+              ),
               button(Icons.threesixty, 'Ripristina vista', _viewer.resetView),
             ],
           ),

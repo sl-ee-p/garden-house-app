@@ -88,7 +88,8 @@ class _SavedConfigsSheetState extends State<_SavedConfigsSheet> {
     if (configs == null) return;
     final name = await showDialog<String>(
       context: context,
-      builder: (_) => _NameDialog(initial: 'La mia casetta ${configs.length + 1}'),
+      builder: (_) =>
+          _NameDialog(initial: 'La mia casetta ${configs.length + 1}'),
     );
     if (name == null || name.trim().isEmpty) return;
     await _update([
@@ -112,7 +113,10 @@ class _SavedConfigsSheetState extends State<_SavedConfigsSheet> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-              child: Text('Configurazioni salvate', style: textTheme.titleLarge),
+              child: Text(
+                'Configurazioni salvate',
+                style: textTheme.titleLarge,
+              ),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -153,8 +157,7 @@ class _SavedConfigsSheetState extends State<_SavedConfigsSheet> {
                           padding: const EdgeInsets.only(right: 24),
                           child: const Icon(Icons.delete_outline),
                         ),
-                        onDismissed: (_) =>
-                            _update([...configs]..remove(c)),
+                        onDismissed: (_) => _update([...configs]..remove(c)),
                         child: ListTile(
                           leading: ConfigSwatch(config: c.config),
                           title: Text(c.name),
@@ -186,7 +189,10 @@ class _NameDialog extends StatefulWidget {
 
 class _NameDialogState extends State<_NameDialog> {
   late final _text = TextEditingController(text: widget.initial)
-    ..selection = TextSelection(baseOffset: 0, extentOffset: widget.initial.length);
+    ..selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: widget.initial.length,
+    );
 
   @override
   void dispose() {

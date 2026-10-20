@@ -38,8 +38,9 @@ void main() {
     expect(base(HousePart.structure.materialName), [1.0, 0.0, 0.0, 1.0]);
     expect(base(HousePart.panels.materialName)[1], 1.0);
     expect(
-      named(HousePart.panels.materialName)['pbrMetallicRoughness']
-          ['metallicFactor'],
+      named(
+        HousePart.panels.materialName,
+      )['pbrMetallicRoughness']['metallicFactor'],
       0.85,
     );
 

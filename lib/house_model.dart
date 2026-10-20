@@ -93,9 +93,10 @@ class HouseModel extends ChangeNotifier {
       applyConfig({...paints, part: paints[part]!.withColor(rgb)});
 
   /// Gives [part] the texture [id], with [fallbackColor] as its color.
-  void setTexture(HousePart part, String id, int fallbackColor) => applyConfig(
-    {...paints, part: paints[part]!.withTexture(id, fallbackColor)},
-  );
+  void setTexture(HousePart part, String id, int fallbackColor) => applyConfig({
+    ...paints,
+    part: paints[part]!.withTexture(id, fallbackColor),
+  });
 
   void setFinish(HousePart part, Finish finish) =>
       applyConfig({...paints, part: paints[part]!.withFinish(finish)});
@@ -120,10 +121,8 @@ class HouseModel extends ChangeNotifier {
     _saveTimer = Timer(const Duration(milliseconds: 500), _save);
   }
 
-  void _save() => _store?.setString(
-    _lastConfigKey,
-    jsonEncode(configToJson(paints)),
-  );
+  void _save() =>
+      _store?.setString(_lastConfigKey, jsonEncode(configToJson(paints)));
 
   @override
   void dispose() {

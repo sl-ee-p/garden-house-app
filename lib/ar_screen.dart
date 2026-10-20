@@ -55,16 +55,15 @@ class _ArScreenState extends State<ArScreen> {
     return 'Inquadra il terreno e muovi lentamente il telefono';
   }
 
-  static String? _describeTrackingFailure(String? reason) =>
-      switch (reason) {
-        null || 'NONE' => null,
-        'INSUFFICIENT_LIGHT' => 'Troppo buio: serve più luce',
-        'EXCESSIVE_MOTION' => 'Muovi il telefono più lentamente',
-        'INSUFFICIENT_FEATURES' =>
-          'Inquadra una zona con più dettagli (erba, ghiaia, piastrelle…)',
-        'CAMERA_UNAVAILABLE' => 'Fotocamera non disponibile',
-        _ => 'Tracciamento perso, muovi lentamente il telefono',
-      };
+  static String? _describeTrackingFailure(String? reason) => switch (reason) {
+    null || 'NONE' => null,
+    'INSUFFICIENT_LIGHT' => 'Troppo buio: serve più luce',
+    'EXCESSIVE_MOTION' => 'Muovi il telefono più lentamente',
+    'INSUFFICIENT_FEATURES' =>
+      'Inquadra una zona con più dettagli (erba, ghiaia, piastrelle…)',
+    'CAMERA_UNAVAILABLE' => 'Fotocamera non disponibile',
+    _ => 'Tracciamento perso, muovi lentamente il telefono',
+  };
 
   /// [error] is the ARCore exception class name sent by the plugin.
   static String _describeSessionError(String error) => switch (error) {
@@ -260,7 +259,8 @@ class _ArScreenState extends State<ArScreen> {
 
   void _showError(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _remove() {

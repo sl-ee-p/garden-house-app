@@ -25,15 +25,14 @@ String describeConfig(HouseConfig config) => [
 String _describePaint(Paint paint) {
   final hex = '#${paint.color.toRadixString(16).padLeft(6, '0').toUpperCase()}';
   final name = paintName(paint);
-  return [
-    name == null ? hex : '$name ($hex)',
-    ?paint.finish?.label,
-  ].join(', ');
+  return [name == null ? hex : '$name ($hex)', ?paint.finish?.label].join(', ');
 }
 
 Future<XFile?> _renderFile(Uint8List? png) async {
   if (png == null) return null;
-  final file = File('${(await getTemporaryDirectory()).path}/la_mia_garden_house.png');
+  final file = File(
+    '${(await getTemporaryDirectory()).path}/la_mia_garden_house.png',
+  );
   await file.writeAsBytes(png, flush: true);
   return XFile(file.path, mimeType: 'image/png');
 }
@@ -75,7 +74,8 @@ Future<void> requestQuote(
           path: quoteEmail,
           // Not queryParameters: that encodes spaces as '+', which mail
           // apps show literally.
-          query: 'subject=${Uri.encodeComponent('Richiesta preventivo Garden House')}'
+          query:
+              'subject=${Uri.encodeComponent('Richiesta preventivo Garden House')}'
               '&body=${Uri.encodeComponent(text)}',
         ),
       ),
@@ -107,10 +107,13 @@ Future<void> requestQuote(
             ),
           ),
         );
-  if (uri != null && !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+  if (uri != null &&
+      !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nessuna app disponibile per inviare la richiesta')),
+        const SnackBar(
+          content: Text('Nessuna app disponibile per inviare la richiesta'),
+        ),
       );
     }
   }

@@ -55,7 +55,9 @@ class _PhotoScreenState extends State<PhotoScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const ListTile(
-              title: Text('Fotografa il punto del giardino dove vuoi la casetta'),
+              title: Text(
+                'Fotografa il punto del giardino dove vuoi la casetta',
+              ),
             ),
             ListTile(
               leading: const Icon(Icons.photo_camera_outlined),
@@ -200,7 +202,8 @@ class _PhotoScreenState extends State<PhotoScreen> {
 
   void _showMessage(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override

@@ -70,21 +70,49 @@ class PanelFinish {
 /// "piano" boards are plain (the 3D model always shows the groove).
 const panelFinishes = <PanelFinish>[
   PanelFinish('piano-goffrato-ral9010', 'Piano goffrato RAL 9010', 0xF0ECE2),
-  PanelFinish('doga-goffrato-ral9010', 'Doga centrale goffrato RAL 9010', 0xE9E4DB),
+  PanelFinish(
+    'doga-goffrato-ral9010',
+    'Doga centrale goffrato RAL 9010',
+    0xE9E4DB,
+  ),
   PanelFinish('doga-liscio-ral9010', 'Doga centrale liscio RAL 9010', 0xF2EEE4),
   PanelFinish('doga-liscio-ral1013', 'Doga centrale liscio RAL 1013', 0xE1D8C2),
   PanelFinish('doga-liscio-ral7035', 'Doga centrale liscio RAL 7035', 0xC4CDCA),
   PanelFinish('doga-liscio-ral9006', 'Doga centrale liscio RAL 9006', 0xA09D9C),
   PanelFinish('piano-liscio-ral9006', 'Piano liscio RAL 9006', 0xA09D9C),
-  PanelFinish('doga-polygrain-ral7016', 'Doga centrale polygrain RAL 7016', 0x3C3D3B),
+  PanelFinish(
+    'doga-polygrain-ral7016',
+    'Doga centrale polygrain RAL 7016',
+    0x3C3D3B,
+  ),
   PanelFinish('piano-polygrain-ral7016', 'Piano polygrain RAL 7016', 0x3C3D3B),
-  PanelFinish('doga-goffrato-ral6005', 'Doga centrale goffrato RAL 6005', 0x1A4539),
-  PanelFinish('doga-goffrato-ral6009', 'Doga centrale goffrato RAL 6009', 0x183020),
+  PanelFinish(
+    'doga-goffrato-ral6005',
+    'Doga centrale goffrato RAL 6005',
+    0x1A4539,
+  ),
+  PanelFinish(
+    'doga-goffrato-ral6009',
+    'Doga centrale goffrato RAL 6009',
+    0x183020,
+  ),
   PanelFinish('piano-liscio-noce-chiaro', 'Piano liscio Noce chiaro', 0x6D4324),
-  PanelFinish('doga-liscio-noce-chiaro', 'Doga centrale liscio Noce chiaro', 0x6E4325),
+  PanelFinish(
+    'doga-liscio-noce-chiaro',
+    'Doga centrale liscio Noce chiaro',
+    0x6E4325,
+  ),
   PanelFinish('piano-liscio-noce-scuro', 'Piano liscio Noce scuro', 0x573F27),
-  PanelFinish('doga-liscio-noce-scuro', 'Doga centrale liscio Noce scuro', 0x4C351F),
-  PanelFinish('doga-goffrato-ral8014', 'Doga centrale goffrato RAL 8014', 0x302214),
+  PanelFinish(
+    'doga-liscio-noce-scuro',
+    'Doga centrale liscio Noce scuro',
+    0x4C351F,
+  ),
+  PanelFinish(
+    'doga-goffrato-ral8014',
+    'Doga centrale goffrato RAL 8014',
+    0x302214,
+  ),
 ];
 
 PanelFinish? panelFinishById(String? id) =>
@@ -142,7 +170,8 @@ HouseConfig randomConfig([Random? random]) {
   random ??= Random();
   final finishes = [Finish.matte, Finish.satin, Finish.satin, Finish.gloss];
   while (true) {
-    final structure = structureSwatches[random.nextInt(structureSwatches.length)];
+    final structure =
+        structureSwatches[random.nextInt(structureSwatches.length)];
     final panels = panelSwatches[random.nextInt(panelSwatches.length)];
     final a = structure.color.computeLuminance();
     final b = panels.color.computeLuminance();

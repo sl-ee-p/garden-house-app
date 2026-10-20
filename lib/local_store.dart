@@ -41,10 +41,12 @@ class LocalStore {
   Future<void> setString(String key, String value) {
     _data[key] = value;
     final json = jsonEncode(_data);
-    return _writing = _writing.then((_) async {
-      final tmp = File('${_file.path}.tmp');
-      await tmp.writeAsString(json, flush: true);
-      await tmp.rename(_file.path);
-    }).catchError((Object e) => debugPrint('Saving settings failed: $e'));
+    return _writing = _writing
+        .then((_) async {
+          final tmp = File('${_file.path}.tmp');
+          await tmp.writeAsString(json, flush: true);
+          await tmp.rename(_file.path);
+        })
+        .catchError((Object e) => debugPrint('Saving settings failed: $e'));
   }
 }
