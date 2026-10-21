@@ -34,10 +34,78 @@ class HouseViewerController {
   /// while another screen covers the viewer.
   void setActive(bool active) => _state?._run('setActive($active)');
 
-  /// PNG of the current render, or null if the model hasn't loaded yet. The
-  /// background is transparent for a non-interactive viewer and the garden
-  /// for an interactive one.
+  /// PNG of the current render, or null if the model hasn't loaded yet or
+  /// the render couldn't be captured (see [ViewerSnapshots]). The background
+  /// is transparent for a non-interactive viewer and the garden for an
+  /// interactive one.
   Future<Uint8List?> snapshot() async => _state?._snapshot();
+}
+
+/// Snapshot requests to the viewer's page, and their answers.
+///
+/// The page answers asynchronously through the JavaScript channel, so a
+/// request whose answer never comes (the script failed to run, the WebView
+/// was torn down) must not leave the caller waiting forever: share and quote
+/// stay disabled until it completes. Every request therefore completes, with
+/// null when the script can't run, the page reports an error, the answer
+/// can't be decoded, or nothing arrives within [timeout].
+@visibleForTesting
+class ViewerSnapshots {
+  ViewerSnapshots(
+    this._runJavaScript, {
+    this.timeout = const Duration(seconds: 10),
+  });
+
+  final Future<void> Function(String js) _runJavaScript;
+  final Duration timeout;
+  Completer<Uint8List?>? _pending;
+
+  /// Asks the page for a PNG. Requests made while one is pending share it.
+  Future<Uint8List?> request() {
+    final pending = _pending;
+    if (pending != null) return pending.future;
+    final completer = _pending = Completer<Uint8List?>();
+    _runJavaScript('snapshot()').catchError((Object e) {
+      debugPrint('Snapshot script failed: $e');
+      _complete(completer, null);
+    });
+    return completer.future.timeout(
+      timeout,
+      onTimeout: () {
+        debugPrint('No snapshot from the viewer after $timeout');
+        _complete(completer, null);
+        return null;
+      },
+    );
+  }
+
+  /// Handles the page's `{type: 'snapshot'}` message: `data` is a PNG data
+  /// URL, or `error` says why there is none.
+  void onMessage(Map<String, dynamic> msg) {
+    final pending = _pending;
+    if (pending == null) return;
+    Uint8List? png;
+    if (msg['data'] case final String data) {
+      try {
+        png = base64Decode(data.substring(data.indexOf(',') + 1));
+      } on FormatException catch (e) {
+        debugPrint('Unreadable snapshot: $e');
+      }
+    } else {
+      debugPrint('Snapshot failed in the viewer: ${msg['error']}');
+    }
+    _complete(pending, png);
+  }
+
+  /// Completes a pending request with null, e.g. when the viewer goes away.
+  void cancel() {
+    if (_pending case final pending?) _complete(pending, null);
+  }
+
+  void _complete(Completer<Uint8List?> completer, Uint8List? png) {
+    if (identical(_pending, completer)) _pending = null;
+    if (!completer.isCompleted) completer.complete(png);
+  }
 }
 
 /// 3D view of the garden house with the model's current paints.
@@ -161,7 +229,14 @@ class _HouseViewerState extends State<HouseViewer> {
   window.setActive = (active) => {
     viewer.style.display = active ? '' : 'none';
   };
-  window.snapshot = () => send({type: 'snapshot', data: viewer.toDataURL('image/png')});
+  // toDataURL throws e.g. on a lost WebGL context; Dart still needs an answer.
+  window.snapshot = () => {
+    try {
+      send({type: 'snapshot', data: viewer.toDataURL('image/png')});
+    } catch (e) {
+      send({type: 'snapshot', error: String(e)});
+    }
+  };
 
   // Dimension lines between bounding-box corners, after modelviewer.dev's
   // dimensions example. The house is modeled in meters.
@@ -272,7 +347,9 @@ model-viewer { --poster-color: transparent; }
   WebViewController? _web;
   bool _loaded = false;
   final _progress = ValueNotifier<double>(0);
-  Completer<Uint8List?>? _pendingSnapshot;
+  late final _snapshots = ViewerSnapshots(
+    (js) => _web?.runJavaScript(js) ?? Future.error(StateError('No WebView')),
+  );
 
   /// Serves the skybox, the lighting and the panel textures.
   AssetServer? _server;
@@ -328,38 +405,47 @@ model-viewer { --poster-color: transparent; }
   void dispose() {
     widget.model.removeListener(_pushPaints);
     if (widget.controller?._state == this) widget.controller!._state = null;
-    _pendingSnapshot?.complete(null);
+    _snapshots.cancel();
     _progress.dispose();
     super.dispose();
   }
 
   void _onMessage(JavaScriptMessage message) {
-    final msg = jsonDecode(message.message) as Map<String, dynamic>;
+    // The page can still post while this state is being disposed.
+    if (!mounted) return;
+    final Map<String, dynamic> msg;
+    try {
+      msg = jsonDecode(message.message) as Map<String, dynamic>;
+    } on Object catch (e) {
+      debugPrint('Ignoring viewer message ${message.message}: $e');
+      return;
+    }
     switch (msg['type']) {
       case 'progress':
-        _progress.value = (msg['value'] as num).toDouble();
+        if (msg['value'] case final num value) {
+          _progress.value = value.toDouble();
+        }
       case 'loaded':
-        _pushPaints();
         setState(() => _loaded = true);
+        _pushPaints();
       case 'snapshot':
-        final data = msg['data'] as String;
-        _pendingSnapshot?.complete(
-          base64Decode(data.substring(data.indexOf(',') + 1)),
-        );
-        _pendingSnapshot = null;
+        _snapshots.onMessage(msg);
     }
   }
 
+  /// Runs [js] in the page once the model has loaded. Failures (e.g. the
+  /// WebView is gone) are logged: they only affect this one command.
   void _run(String js) {
     final web = _web;
-    if (_loaded && web != null) web.runJavaScript(js);
+    if (!_loaded || web == null) return;
+    web.runJavaScript(js).catchError((Object e) {
+      debugPrint('Viewer script failed ($js): $e');
+    });
   }
 
   Future<Uint8List?> _snapshot() {
     if (!_loaded || _web == null) return Future.value(null);
-    final pending = _pendingSnapshot ??= Completer<Uint8List?>();
-    _run('snapshot()');
-    return pending.future;
+    return _snapshots.request();
   }
 
   void _pushPaints() {
