@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// Serves bundled assets over loopback HTTP, for the WebView.
@@ -43,8 +44,17 @@ class AssetServer {
         ..headers.contentLength = data.lengthInBytes
         ..add(data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes));
     } catch (_) {
-      response.statusCode = HttpStatus.notFound;
+      try {
+        response.statusCode = HttpStatus.notFound;
+      } on StateError catch (e) {
+        // Headers already sent (the client is gone).
+        debugPrint('Asset server: cannot send 404 for $key: $e');
+      }
     }
-    await response.close();
+    try {
+      await response.close();
+    } catch (e) {
+      debugPrint('Asset server: connection closed early for $key: $e');
+    }
   }
 }
