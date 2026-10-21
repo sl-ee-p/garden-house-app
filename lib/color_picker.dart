@@ -23,8 +23,8 @@ class ColorChooser extends StatelessWidget {
     final selected = this.selected;
     final isPreset = selected == null || swatches.any((s) => s.rgb == selected);
     return Wrap(
-      spacing: 10,
-      runSpacing: 10,
+      spacing: 2,
+      runSpacing: 2,
       children: [
         for (final s in swatches)
           _Dot(
@@ -68,8 +68,8 @@ class FinishChooser extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: 10,
-      runSpacing: 10,
+      spacing: 2,
+      runSpacing: 2,
       children: [
         for (final f in panelFinishes)
           _Dot(
@@ -104,47 +104,61 @@ class _Dot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: tooltip,
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: color,
-            image: image == null
-                ? null
-                : DecorationImage(image: image!, fit: BoxFit.cover),
-            gradient: color == null
-                ? const SweepGradient(
-                    colors: [
-                      Colors.red,
-                      Colors.yellow,
-                      Colors.green,
-                      Colors.cyan,
-                      Colors.blue,
-                      Colors.purple,
-                      Colors.red,
-                    ],
-                  )
-                : null,
-            border: Border.all(
-              color: selected ? scheme.primary : scheme.outlineVariant,
-              width: selected ? 3 : 1,
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: tooltip,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: Tooltip(
+        message: tooltip,
+        excludeFromSemantics: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: SizedBox.square(
+            dimension: 48,
+            child: Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: color,
+                  image: image == null
+                      ? null
+                      : DecorationImage(image: image!, fit: BoxFit.cover),
+                  gradient: color == null
+                      ? const SweepGradient(
+                          colors: [
+                            Colors.red,
+                            Colors.yellow,
+                            Colors.green,
+                            Colors.cyan,
+                            Colors.blue,
+                            Colors.purple,
+                            Colors.red,
+                          ],
+                        )
+                      : null,
+                  border: Border.all(
+                    color: selected ? scheme.primary : scheme.outlineVariant,
+                    width: selected ? 3 : 1,
+                  ),
+                  boxShadow: selected
+                      ? [
+                          BoxShadow(
+                            color: scheme.primary.withValues(alpha: .35),
+                            blurRadius: 8,
+                          ),
+                        ]
+                      : null,
+                ),
+                child: child,
+              ),
             ),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: scheme.primary.withValues(alpha: .35),
-                      blurRadius: 8,
-                    ),
-                  ]
-                : null,
           ),
-          child: child,
         ),
       ),
     );
