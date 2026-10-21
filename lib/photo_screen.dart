@@ -73,29 +73,42 @@ class _PhotoScreenState extends State<PhotoScreen> {
         ),
       ),
     );
+    if (!mounted) return;
     if (source == null) {
       if (_photo == null && mounted) Navigator.pop(context);
       return;
     }
     // The app declares CAMERA (for AR), so Android refuses the camera intent
     // until the permission is granted.
+    // On iOS image_picker asks for the permission itself.
     if (source == ImageSource.camera &&
+        Platform.isAndroid &&
         !(await Permission.camera.request()).isGranted) {
       _showMessage('Serve l\'accesso alla fotocamera per scattare la foto');
       return;
     }
-    final picked = await ImagePicker().pickImage(
-      source: source,
-      maxWidth: 2400,
-      maxHeight: 2400,
-      imageQuality: 90,
-    );
-    if (picked == null) {
-      if (_photo == null && mounted) Navigator.pop(context);
+    if (!mounted) return;
+    final XFile? picked;
+    try {
+      picked = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 2400,
+        maxHeight: 2400,
+        imageQuality: 90,
+      );
+    } on PlatformException catch (e) {
+      debugPrint('pickImage failed: $e');
+      _showMessage('Impossibile aprire la fotocamera o la galleria');
       return;
     }
+    if (!mounted) return;
+    if (picked == null) {
+      if (_photo == null) Navigator.pop(context);
+      return;
+    }
+    final path = picked.path;
     setState(() {
-      _photo = File(picked.path);
+      _photo = File(path);
       _center = null; // re-centred on the next layout
     });
   }
@@ -147,6 +160,9 @@ class _PhotoScreenState extends State<PhotoScreen> {
       await SharePlus.instance.share(
         ShareParams(files: [XFile(file.path)], text: 'La mia Garden House'),
       );
+    } catch (e) {
+      debugPrint('Sharing the photo failed: $e');
+      _showMessage('Condivisione non riuscita, riprova');
     } finally {
       if (mounted) setState(() => _sharing = false);
     }

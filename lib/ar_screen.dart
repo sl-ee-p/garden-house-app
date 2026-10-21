@@ -116,6 +116,11 @@ class _ArScreenState extends State<ArScreen> {
                       onPressed: openAppSettings,
                       child: const Text('Apri impostazioni'),
                     ),
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: _usePhoto,
+                      child: const Text('Usa una foto'),
+                    ),
                   ],
                 ),
               ),
@@ -227,12 +232,15 @@ class _ArScreenState extends State<ArScreen> {
     if (hit.isEmpty) return;
 
     setState(() => _placing = true);
+    ARPlaneAnchor? anchor;
+    var anchorAdded = false;
     try {
-      final anchor = ARPlaneAnchor(transformation: hit.first.worldTransform);
+      anchor = ARPlaneAnchor(transformation: hit.first.worldTransform);
       if (await _anchors!.addAnchor(anchor) != true) {
         _showError('Impossibile ancorare la casetta, riprova');
         return;
       }
+      anchorAdded = true;
 
       final node = ARNode(
         type: NodeType.fileSystemAppFolderGLB,
@@ -248,6 +256,14 @@ class _ArScreenState extends State<ArScreen> {
         _anchors!.removeAnchor(anchor);
         _showError('Impossibile caricare il modello della casetta');
       }
+    } catch (e) {
+      debugPrint('Placing the house failed: $e');
+      if (anchorAdded && _anchor == null) {
+        try {
+          _anchors?.removeAnchor(anchor!);
+        } catch (_) {}
+      }
+      _showError('Impossibile posizionare la casetta, riprova');
     } finally {
       if (mounted) setState(() => _placing = false);
     }
