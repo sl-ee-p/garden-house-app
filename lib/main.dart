@@ -47,7 +47,8 @@ class ConfiguratorScreen extends StatefulWidget {
 }
 
 class _ConfiguratorScreenState extends State<ConfiguratorScreen> {
-  late final Future<HouseModel> _model = HouseModel.load();
+  late Future<HouseModel> _model = HouseModel.load();
+  late final AppLifecycleListener _lifecycle;
   late final Future<ArCoreAvailability> _arCore = checkArCoreAvailability();
   final _viewer = HouseViewerController();
   HousePart _part = HousePart.structure;
@@ -55,6 +56,34 @@ class _ConfiguratorScreenState extends State<ConfiguratorScreen> {
   bool _busy = false; // sharing or preparing a quote request
   bool _fullscreen = false;
   bool _dimensions = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Save pending changes before the OS can kill the app.
+    _lifecycle = AppLifecycleListener(onPause: _flush, onDetach: _flush);
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  Future<void> _flush() async {
+    try {
+      await (await _model).flush();
+    } catch (e) {
+      debugPrint('Could not save on pause: $e');
+    }
+  }
+
+  void _showMessage(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text)));
+  }
 
   /// Real AR where ARCore is available, otherwise placing the house on a photo.
   Future<void> _openAr(HouseModel model) async {
@@ -72,6 +101,11 @@ class _ConfiguratorScreenState extends State<ConfiguratorScreen> {
       await Navigator.of(context)
           .push(MaterialPageRoute(builder: (_) => screen));
       _viewer.setActive(true);
+    } catch (e) {
+      debugPrint('Could not open AR: $e');
+      _showMessage(
+        'Impossibile preparare la casetta per la realtà aumentata, riprova',
+      );
     } finally {
       if (mounted) setState(() => _openingAr = false);
     }
@@ -84,6 +118,9 @@ class _ConfiguratorScreenState extends State<ConfiguratorScreen> {
     setState(() => _busy = true);
     try {
       await action(await _viewer.snapshot());
+    } catch (e) {
+      debugPrint('Sharing failed: $e');
+      _showMessage('Condivisione non riuscita, riprova');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -95,7 +132,22 @@ class _ConfiguratorScreenState extends State<ConfiguratorScreen> {
       future: _model,
       builder: (context, snap) {
         if (snap.hasError) {
-          return Scaffold(body: Center(child: Text('${snap.error}')));
+          debugPrint('Could not load the house: ${snap.error}');
+          return Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Impossibile caricare la casetta'),
+                  const SizedBox(height: 16),
+                  FilledButton(
+                    onPressed: () => setState(() => _model = HouseModel.load()),
+                    child: const Text('Riprova'),
+                  ),
+                ],
+              ),
+            ),
+          );
         }
         if (!snap.hasData) {
           return const Scaffold(

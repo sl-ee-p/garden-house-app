@@ -88,6 +88,7 @@ Future<void> requestQuote(
     );
     return;
   }
+  if (!context.mounted) return;
   final uri = options.length == 1
       ? options.single.$3
       : await showModalBottomSheet<Uri>(
@@ -107,8 +108,8 @@ Future<void> requestQuote(
             ),
           ),
         );
-  if (uri != null &&
-      !await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+  if (uri == null) return;
+  if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
